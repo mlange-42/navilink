@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The waypoints created by uploading routes.gpx, for cleanup. See TESTING.md. -->
+<gpx version="1.0" creator="navilink tests" xmlns="http://www.topografix.com/GPX/1/0">
+  <wpt lat="0" lon="0"><name>ZZR1A</name></wpt>
+  <wpt lat="0" lon="0"><name>ZZR1B</name></wpt>
+  <wpt lat="0" lon="0"><name>ZZR1C</name></wpt>
+  <wpt lat="0" lon="0"><name>R02001</name></wpt>
+  <wpt lat="0" lon="0"><name>R02002</name></wpt>
+</gpx>

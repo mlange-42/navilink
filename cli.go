@@ -25,8 +25,25 @@ type Globals struct {
 // session is an open connection to a device.
 type session struct {
 	*navilink.Client
-	port serial.Port
+	port io.Closer
 	quit bool
+}
+
+// openPort opens a serial port. It is replaced by a simulated device in tests.
+var openPort = func(device string) (io.ReadWriteCloser, error) {
+	port, err := serial.Open(device, &serial.Mode{
+		BaudRate: 115200,
+		DataBits: 8,
+		Parity:   serial.NoParity,
+		StopBits: serial.OneStopBit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("can't open %s: %w%s", device, err, hint.OpenError(err))
+	}
+	if err := port.SetReadTimeout(100 * time.Millisecond); err != nil {
+		return nil, errors.Join(err, port.Close())
+	}
+	return port, nil
 }
 
 // open opens the serial port and starts the communication with the device.
@@ -39,17 +56,9 @@ func (g *Globals) open() (*session, error) {
 		}
 	}
 
-	port, err := serial.Open(device, &serial.Mode{
-		BaudRate: 115200,
-		DataBits: 8,
-		Parity:   serial.NoParity,
-		StopBits: serial.OneStopBit,
-	})
+	port, err := openPort(device)
 	if err != nil {
-		return nil, fmt.Errorf("can't open %s: %w%s", device, err, hint.OpenError(err))
-	}
-	if err := port.SetReadTimeout(100 * time.Millisecond); err != nil {
-		return nil, errors.Join(err, port.Close())
+		return nil, err
 	}
 
 	conn := navilink.NewConn(port)
@@ -234,9 +243,8 @@ type input struct {
 	Input string `short:"i" type:"path" placeholder:"FILE" help:"Read GPX from this file instead of stdin."`
 }
 
-// readWaypoints reads the input GPX and converts its waypoints for the device.
-// Invalid waypoints are reported and skipped.
-func (in *input) readWaypoints() ([]navilink.Waypoint, error) {
+// readGPX reads the input GPX.
+func (in *input) readGPX() (*gpx.GPX, error) {
 	r := io.Reader(os.Stdin)
 	if in.Input != "" && in.Input != "-" {
 		f, err := os.Open(in.Input)
@@ -246,7 +254,13 @@ func (in *input) readWaypoints() ([]navilink.Waypoint, error) {
 		defer func() { _ = f.Close() }()
 		r = f
 	}
-	g, err := gpx.Read(r)
+	return gpx.Read(r)
+}
+
+// readWaypoints reads the input GPX and converts its waypoints for the device.
+// Invalid waypoints are reported and skipped.
+func (in *input) readWaypoints() ([]navilink.Waypoint, error) {
+	g, err := in.readGPX()
 	if err != nil {
 		return nil, err
 	}
@@ -422,7 +436,11 @@ func (c *WaypointsRemoveCmd) Run(g *Globals) (err error) {
 	deleted, failed := 0, 0
 	for i, id := range toDelete {
 		if err := s.DeleteWaypoint(id); err != nil {
-			fmt.Fprintf(os.Stderr, "Removal of waypoint %s failed, maybe it is in use? %v\n", names[i], err)
+			if errors.Is(err, navilink.ErrRefused) {
+				fmt.Fprintf(os.Stderr, "Waypoint %s not deleted: refused by the device, it is probably used by a route\n", names[i])
+			} else {
+				fmt.Fprintf(os.Stderr, "Removal of waypoint %s failed: %v\n", names[i], err)
+			}
 			failed++
 			continue
 		}
@@ -454,6 +472,9 @@ func (c *WaypointsDeleteAllCmd) Run(g *Globals) (err error) {
 	if info.Waypoints == 0 {
 		fmt.Fprintln(os.Stderr, "There are no waypoints on the device.")
 		return nil
+	}
+	if info.Routes > 0 {
+		return fmt.Errorf("there are %d routes on the device; delete them first with 'navilink routes delete-all'", info.Routes)
 	}
 	if err := c.confirm(fmt.Sprintf("All %d waypoints will be deleted from the device!", info.Waypoints)); err != nil {
 		return err

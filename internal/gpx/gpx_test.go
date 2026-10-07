@@ -204,3 +204,55 @@ func TestDeviceTestdata(t *testing.T) {
 		t.Errorf("remove names: got %v", names)
 	}
 }
+
+func TestRouteName(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"zz route one!", "ZZ ROUTE ONE"},
+		{"  a   b  ", "A B"},
+		{"Leipzig - Halle tour", "LEIPZIG HALLE"},
+		{"!!!", ""},
+	}
+	for _, tt := range tests {
+		if got := RouteName(tt.in); got != tt.want {
+			t.Errorf("RouteName(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestToRoute(t *testing.T) {
+	r := Route{Points: []Point{{Lat: 1, Lon: 2, Name: "start"}, {Lat: 3, Lon: 4}}}
+	name, points, err := r.ToRoute(3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if name != "ROUTE 3" || len(points) != 2 || points[0].Name != "START" || points[1].Name != "R03002" {
+		t.Errorf("got %q %+v", name, points)
+	}
+
+	if _, _, err := (&Route{Name: "empty"}).ToRoute(1); err == nil {
+		t.Error("expected error for route without points")
+	}
+	long := Route{Points: make([]Point, navilink.MaxRoutePoints+1)}
+	if _, _, err := long.ToRoute(1); err == nil {
+		t.Error("expected error for route with too many points")
+	}
+}
+
+func TestFromRoutes(t *testing.T) {
+	waypoints := []navilink.Waypoint{{ID: 4, Name: "A", Lat: 1, Lon: 2}, {ID: 9, Name: "B", Lat: 3, Lon: 4}}
+	g, err := FromRoutes([]navilink.Route{{Name: "R", WaypointIDs: []uint16{9, 4, 9}}}, waypoints)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, p := range g.Routes[0].Points {
+		names = append(names, p.Name)
+	}
+	if g.Routes[0].Name != "R" || strings.Join(names, ",") != "B,A,B" {
+		t.Errorf("got %+v", g.Routes[0])
+	}
+
+	if _, err := FromRoutes([]navilink.Route{{Name: "R", WaypointIDs: []uint16{5}}}, waypoints); err == nil {
+		t.Error("expected error for unknown waypoint ID")
+	}
+}

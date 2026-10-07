@@ -1,7 +1,7 @@
 // Package navilink implements the NaviLink protocol used to communicate
 // with Locosys NaviGPS devices over a serial connection.
 //
-// See http://wiki.splitbrain.org/navilink for the protocol specification.
+// See docs/navilink-protocol.md for the protocol specification.
 package navilink
 
 import (

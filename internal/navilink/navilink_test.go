@@ -3,6 +3,7 @@ package navilink
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"io"
 	"testing"
 	"time"
@@ -267,14 +268,14 @@ func TestEncodeWaypoint(t *testing.T) {
 		0x4e, 0x90, 0x24, 0x5a, // lon 1512345678
 		100, 0, // altitude in feet
 		9, 6, 15, 12, 30, 45, // time
-		2, 0x00, 0x7e, // symbol, reserved
+		2, 0x00, 0x00, 0x7e, // symbol, reserved, tags
 	}
 	if !bytes.Equal(msg, want) {
 		t.Errorf("got  % x\nwant % x", msg, want)
 	}
 
-	// Round trip through the download format, which has one more trailing byte.
-	got := decodeWaypoint(append(msg, 0))
+	// Round trip through the download format.
+	got := decodeWaypoint(msg)
 	if got.Name != "HOME" || got.Lat != -33.5 || got.Lon != 151.2345678 || got.Symbol != 2 ||
 		!got.Time.Equal(time.Date(2009, 6, 15, 12, 30, 45, 0, time.UTC)) {
 		t.Errorf("round trip: got %+v", got)
@@ -321,8 +322,8 @@ func TestDeleteWaypoint(t *testing.T) {
 func TestDeleteWaypointFails(t *testing.T) {
 	dev := &fakeDevice{}
 	dev.answer(t, PidNak, nil)
-	if err := newTestClient(dev).DeleteWaypoint(1); err == nil {
-		t.Error("expected error on NAK")
+	if err := newTestClient(dev).DeleteWaypoint(1); !errors.Is(err, ErrRefused) {
+		t.Errorf("expected ErrRefused on NAK, got %v", err)
 	}
 }
 

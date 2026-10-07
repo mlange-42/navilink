@@ -146,7 +146,7 @@ func encodeWaypoint(wp Waypoint) []byte {
 	alt := math.Round(wp.Altitude / feetToMeters)
 	msg = le.AppendUint16(msg, uint16(max(0, min(alt, math.MaxUint16))))
 	msg = append(msg, encodeTime(wp.Time)...)
-	msg = append(msg, wp.Symbol, 0x00, 0x7e)
+	msg = append(msg, wp.Symbol, 0x00, 0x00, 0x7e) // symbol, reserved, tags
 	return msg
 }
 
