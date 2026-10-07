@@ -18,7 +18,7 @@ type CLI struct {
 	Track struct {
 		Get    TrackGetCmd    `cmd:"" help:"Download track data as GPX."`
 		Delete TrackDeleteCmd `cmd:"" help:"Delete all track data from the device."`
-	} `cmd:"" aliases:"tp" help:"Manage track data."`
+	} `cmd:"" aliases:"tr" help:"Manage track data."`
 
 	Waypoints struct {
 		Get       WaypointsGetCmd       `cmd:"" help:"Download waypoints as GPX."`
