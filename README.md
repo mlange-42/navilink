@@ -1,5 +1,7 @@
 # navilink
 
+[![Tests](https://github.com/mlange-42/navilink/actions/workflows/tests.yml/badge.svg)](https://github.com/mlange-42/navilink/actions/workflows/tests.yml)
+
 A command line tool for Locosys NaviGPS devices (GT-11/BGT-11, GT-31/BGT-31)
 connected via USB. It talks to the device using the NaviLink protocol to:
 
