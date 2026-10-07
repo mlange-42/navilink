@@ -20,11 +20,21 @@ var ErrRefused = errors.New("refused by the device")
 // Client implements the NaviLink commands on top of a Conn.
 type Client struct {
 	conn *Conn
+	// Progress is called during operations that read many records,
+	// with the number of records (trackpoints, waypoints or routes)
+	// done so far and the total number. It may be nil.
+	Progress func(done, total int)
 }
 
 // NewClient creates a new client using the given connection.
 func NewClient(conn *Conn) *Client {
 	return &Client{conn: conn}
+}
+
+func (c *Client) progress(done, total int) {
+	if c.Progress != nil {
+		c.Progress(done, total)
+	}
 }
 
 // request sends a packet and checks that the response has the wanted type.
@@ -86,6 +96,7 @@ func (c *Client) Waypoints() ([]Waypoint, error) {
 
 	total := int(info.Waypoints)
 	points := make([]Waypoint, 0, total)
+	c.progress(0, total)
 	for read := 0; read < total; {
 		count := min(total-read, waypointChunkSize)
 
@@ -103,6 +114,7 @@ func (c *Client) Waypoints() ([]Waypoint, error) {
 			points = append(points, decodeWaypoint(data[i*recordSize:(i+1)*recordSize]))
 		}
 		read += count
+		c.progress(read, total)
 	}
 	return points, nil
 }
@@ -145,6 +157,7 @@ func (c *Client) LogPoints() ([]Trackpoint, error) {
 // readMemory reads size bytes starting at addr, in chunks.
 func (c *Client) readMemory(addr, size uint32) ([]byte, error) {
 	out := make([]byte, 0, size)
+	c.progress(0, int(size/recordSize))
 	for read := uint32(0); read < size; {
 		count := min(size-read, trackChunkSize)
 
@@ -157,6 +170,7 @@ func (c *Client) readMemory(addr, size uint32) ([]byte, error) {
 		}
 		out = append(out, data...)
 		read += count
+		c.progress(int(read/recordSize), int(size/recordSize))
 
 		if err := c.conn.Send(PidAck, nil); err != nil {
 			return nil, err
@@ -215,6 +229,7 @@ func (c *Client) Routes() ([]Route, error) {
 		return nil, err
 	}
 	routes := make([]Route, 0, info.Routes)
+	c.progress(0, int(info.Routes))
 	for i := range uint32(info.Routes) {
 		msg := binary.LittleEndian.AppendUint32(nil, i)
 		msg = append(msg, 0x00, 0x00, 0x01)
@@ -227,6 +242,7 @@ func (c *Client) Routes() ([]Route, error) {
 			return nil, fmt.Errorf("reading route %d: %w", i, err)
 		}
 		routes = append(routes, r)
+		c.progress(len(routes), int(info.Routes))
 	}
 	return routes, nil
 }
