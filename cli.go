@@ -12,6 +12,7 @@ import (
 	"github.com/mlange-42/navilink/internal/gpx"
 	"github.com/mlange-42/navilink/internal/hint"
 	"github.com/mlange-42/navilink/internal/navilink"
+	"github.com/mlange-42/navilink/internal/progress"
 	"go.bug.st/serial"
 )
 
@@ -25,8 +26,9 @@ type Globals struct {
 // session is an open connection to a device.
 type session struct {
 	*navilink.Client
-	port io.Closer
-	quit bool
+	port    io.Closer
+	quit    bool
+	verbose bool
 }
 
 // openPort opens a serial port. It is replaced by a simulated device in tests.
@@ -69,7 +71,44 @@ func (g *Globals) open() (*session, error) {
 	if err := client.Sync(); err != nil {
 		return nil, errors.Join(err, port.Close())
 	}
-	return &session{Client: client, port: port, quit: g.Quit}, nil
+	return &session{Client: client, port: port, quit: g.Quit, verbose: g.Verbose}, nil
+}
+
+// newBar creates a progress bar. It is hidden in verbose mode,
+// where it would mix with the packet dumps.
+func (s *session) newBar(label string) *progress.Bar {
+	return progress.New(label, s.verbose)
+}
+
+// withProgress shows a progress bar while running a client operation.
+func withProgress[T any](s *session, label string, op func() (T, error)) (T, error) {
+	bar := s.newBar(label)
+	s.Progress = bar.Update
+	defer func() {
+		s.Progress = nil
+		bar.Finish()
+	}()
+	return op()
+}
+
+// Trackpoints reads all trackpoints, showing progress.
+func (s *session) Trackpoints() ([]navilink.Trackpoint, error) {
+	return withProgress(s, "Reading track", s.Client.Trackpoints)
+}
+
+// LogPoints reads the data log, showing progress.
+func (s *session) LogPoints() ([]navilink.Trackpoint, error) {
+	return withProgress(s, "Reading log", s.Client.LogPoints)
+}
+
+// Waypoints reads all waypoints, showing progress.
+func (s *session) Waypoints() ([]navilink.Waypoint, error) {
+	return withProgress(s, "Reading waypoints", s.Client.Waypoints)
+}
+
+// Routes reads all routes, showing progress.
+func (s *session) Routes() ([]navilink.Route, error) {
+	return withProgress(s, "Reading routes", s.Client.Routes)
 }
 
 // Close quits NaviLink mode if requested and closes the port.
@@ -361,14 +400,17 @@ func (c *WaypointsPutCmd) Run(g *Globals) (err error) {
 		}
 	}
 
+	bar := s.newBar("Uploading waypoints")
+	bar.Update(0, len(points))
 	uploaded, failed := 0, 0
 	for _, wp := range points {
+		bar.Add(1)
 		if existing[wp.Name] {
-			fmt.Fprintf(os.Stderr, "Skipped existing waypoint %s\n", wp.Name)
+			bar.Logf("Skipped existing waypoint %s\n", wp.Name)
 			continue
 		}
 		if err := s.AddWaypoint(wp); err != nil {
-			fmt.Fprintf(os.Stderr, "Upload failed: %v\n", err)
+			bar.Logf("Upload failed: %v\n", err)
 			failed++
 			continue
 		}
@@ -377,6 +419,7 @@ func (c *WaypointsPutCmd) Run(g *Globals) (err error) {
 		}
 		uploaded++
 	}
+	bar.Finish()
 	fmt.Fprintf(os.Stderr, "Uploaded %d waypoints.\n", uploaded)
 	if failed > 0 {
 		return fmt.Errorf("upload of %d waypoints failed", failed)
@@ -433,19 +476,23 @@ func (c *WaypointsRemoveCmd) Run(g *Globals) (err error) {
 		return err
 	}
 
+	bar := s.newBar("Deleting waypoints")
+	bar.Update(0, len(toDelete))
 	deleted, failed := 0, 0
 	for i, id := range toDelete {
+		bar.Add(1)
 		if err := s.DeleteWaypoint(id); err != nil {
 			if errors.Is(err, navilink.ErrRefused) {
-				fmt.Fprintf(os.Stderr, "Waypoint %s not deleted: refused by the device, it is probably used by a route\n", names[i])
+				bar.Logf("Waypoint %s not deleted: refused by the device, it is probably used by a route\n", names[i])
 			} else {
-				fmt.Fprintf(os.Stderr, "Removal of waypoint %s failed: %v\n", names[i], err)
+				bar.Logf("Removal of waypoint %s failed: %v\n", names[i], err)
 			}
 			failed++
 			continue
 		}
 		deleted++
 	}
+	bar.Finish()
 	fmt.Fprintf(os.Stderr, "Deleted %d waypoints.\n", deleted)
 	if failed > 0 {
 		return fmt.Errorf("removal of %d waypoints failed", failed)

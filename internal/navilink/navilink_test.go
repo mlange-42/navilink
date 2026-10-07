@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"slices"
 	"testing"
 	"time"
 )
@@ -163,12 +164,18 @@ func TestTrackpointsChunked(t *testing.T) {
 	dev.answer(t, PidData, bytes.Repeat(trackRecord(1, 2, 3, 4), 512))
 	dev.answer(t, PidData, bytes.Repeat(trackRecord(1, 2, 3, 4), n-512))
 
-	points, err := newTestClient(dev).Trackpoints()
+	client := newTestClient(dev)
+	var progress [][2]int
+	client.Progress = func(done, total int) { progress = append(progress, [2]int{done, total}) }
+	points, err := client.Trackpoints()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(points) != n {
 		t.Errorf("got %d points, want %d", len(points), n)
+	}
+	if want := [][2]int{{0, n}, {512, n}, {n, n}}; !slices.Equal(progress, want) {
+		t.Errorf("progress: got %v, want %v", progress, want)
 	}
 
 	// Check the second read request: address and size.

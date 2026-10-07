@@ -122,10 +122,14 @@ func (c *RoutesPutCmd) Run(g *Globals) (err error) {
 		return err
 	}
 
+	bar := s.newBar("Uploading routes")
+	bar.Update(0, len(routes))
+	wps.logf = bar.Logf
 	uploaded, failed := 0, 0
 	for _, r := range routes {
+		bar.Add(1)
 		if existing[r.name] {
-			fmt.Fprintf(os.Stderr, "Skipped existing route %s\n", r.name)
+			bar.Logf("Skipped existing route %s\n", r.name)
 			continue
 		}
 		ids, err := wps.ensure(r)
@@ -133,7 +137,7 @@ func (c *RoutesPutCmd) Run(g *Globals) (err error) {
 			err = s.AddRoute(navilink.Route{Name: r.name, WaypointIDs: ids})
 		}
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Upload of route %s failed: %v\n", r.name, err)
+			bar.Logf("Upload of route %s failed: %v\n", r.name, err)
 			failed++
 			continue
 		}
@@ -142,6 +146,7 @@ func (c *RoutesPutCmd) Run(g *Globals) (err error) {
 		}
 		uploaded++
 	}
+	bar.Finish()
 	fmt.Fprintf(os.Stderr, "Uploaded %d routes and %d new waypoints.\n", uploaded, wps.added)
 	if failed > 0 {
 		return fmt.Errorf("upload of %d routes failed", failed)
@@ -154,10 +159,14 @@ type waypointIndex struct {
 	s      *session
 	byName map[string]navilink.Waypoint
 	added  int
+	logf   func(format string, args ...any)
 }
 
 func newWaypointIndex(s *session) (*waypointIndex, error) {
-	idx := &waypointIndex{s: s}
+	idx := &waypointIndex{
+		s:    s,
+		logf: func(format string, args ...any) { fmt.Fprintf(os.Stderr, format, args...) },
+	}
 	return idx, idx.refresh()
 }
 
@@ -182,7 +191,7 @@ func (idx *waypointIndex) ensure(r gpxRoute) ([]uint16, error) {
 	for _, p := range r.points {
 		if wp, ok := idx.byName[p.Name]; ok {
 			if math.Abs(wp.Lat-p.Lat) > 1e-4 || math.Abs(wp.Lon-p.Lon) > 1e-4 {
-				fmt.Fprintf(os.Stderr, "Route %s: using existing waypoint %s at %.5f, %.5f instead of %.5f, %.5f\n",
+				idx.logf("Route %s: using existing waypoint %s at %.5f, %.5f instead of %.5f, %.5f\n",
 					r.name, p.Name, wp.Lat, wp.Lon, p.Lat, p.Lon)
 			}
 			continue
