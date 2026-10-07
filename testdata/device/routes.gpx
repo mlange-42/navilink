@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Test routes for device testing, see TESTING.md.
+     All route and waypoint names start with "ZZ" or are generated ("R02..."). -->
+<gpx version="1.1" creator="navilink tests" xmlns="http://www.topografix.com/GPX/1/1">
+  <!-- Named points, uploaded as new waypoints. Name normalization. -->
+  <rte>
+    <name>zz route one!</name>
+    <rtept lat="51.3401" lon="12.3712">
+      <name>ZZR1A</name>
+    </rtept>
+    <rtept lat="51.3455" lon="12.3801">
+      <ele>110</ele>
+      <name>ZZR1B</name>
+      <sym>Bridge</sym>
+    </rtept>
+    <rtept lat="51.3512" lon="12.3899">
+      <name>ZZR1C</name>
+    </rtept>
+  </rte>
+  <!-- Unnamed points get generated names. ZZR1A is reused from the first route. -->
+  <rte>
+    <name>ZZ Route 2</name>
+    <rtept lat="51.3600" lon="12.4000"/>
+    <rtept lat="51.3650" lon="12.4100"/>
+    <rtept lat="51.3401" lon="12.3712">
+      <name>ZZR1A</name>
+    </rtept>
+  </rte>
+</gpx>

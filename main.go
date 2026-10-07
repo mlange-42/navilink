@@ -3,6 +3,8 @@
 package main
 
 import (
+	"os"
+
 	"github.com/alecthomas/kong"
 )
 
@@ -25,6 +27,13 @@ type CLI struct {
 		DeleteAll WaypointsDeleteAllCmd `cmd:"" help:"Delete all waypoints from the device."`
 	} `cmd:"" aliases:"wp" help:"Manage waypoints."`
 
+	Routes struct {
+		Get       RoutesGetCmd       `cmd:"" help:"Download routes as GPX."`
+		Put       RoutesPutCmd       `cmd:"" help:"Upload routes from GPX. Route points missing on the device are uploaded as waypoints, existing ones are reused by name."`
+		Remove    RoutesRemoveCmd    `cmd:"" help:"Delete the routes given as GPX from the device, matched by name. Their waypoints are kept."`
+		DeleteAll RoutesDeleteAllCmd `cmd:"" help:"Delete all routes from the device. Their waypoints are kept."`
+	} `cmd:"" aliases:"rt" help:"Manage routes."`
+
 	Log struct {
 		Get LogGetCmd `cmd:"" help:"Download internal log data as GPX (BGT-31/GT-31 only)."`
 	} `cmd:"" help:"Access the internal data logger."`
@@ -32,11 +41,18 @@ type CLI struct {
 
 func main() {
 	var cli CLI
-	ctx := kong.Parse(&cli,
+	parser := newParser(&cli)
+	ctx, err := parser.Parse(os.Args[1:])
+	parser.FatalIfErrorf(err)
+	ctx.FatalIfErrorf(ctx.Run())
+}
+
+func newParser(cli *CLI, options ...kong.Option) *kong.Kong {
+	options = append([]kong.Option{
 		kong.Name("navilink"),
 		kong.Description("Download or upload data to a Locosys NaviGPS device via the NaviLink protocol."),
 		kong.UsageOnError(),
 		kong.Bind(&cli.Globals),
-	)
-	ctx.FatalIfErrorf(ctx.Run())
+	}, options...)
+	return kong.Must(cli, options...)
 }

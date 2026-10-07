@@ -3,6 +3,7 @@ package gpx
 
 import (
 	"encoding/xml"
+	"fmt"
 	"io"
 	"math"
 	"time"
@@ -22,7 +23,14 @@ type GPX struct {
 	Version   string   `xml:"version,attr"`
 	Creator   string   `xml:"creator,attr"`
 	Waypoints []Point  `xml:"wpt"`
+	Routes    []Route  `xml:"rte"`
 	Tracks    []Track  `xml:"trk"`
+}
+
+// Route is a GPX route.
+type Route struct {
+	Name   string  `xml:"name,omitempty"`
+	Points []Point `xml:"rtept"`
 }
 
 // Track is a GPX track.
@@ -83,6 +91,30 @@ func FromWaypoints(points []navilink.Waypoint) *GPX {
 		}
 	}
 	return g
+}
+
+// FromRoutes creates a GPX from the given routes.
+// The waypoints must contain all waypoints referenced by the routes.
+func FromRoutes(routes []navilink.Route, waypoints []navilink.Waypoint) (*GPX, error) {
+	byID := make(map[uint16]navilink.Waypoint, len(waypoints))
+	for _, wp := range waypoints {
+		byID[wp.ID] = wp
+	}
+
+	g := newGPX()
+	g.Routes = make([]Route, len(routes))
+	for i, r := range routes {
+		points := make([]navilink.Waypoint, len(r.WaypointIDs))
+		for j, id := range r.WaypointIDs {
+			wp, ok := byID[id]
+			if !ok {
+				return nil, fmt.Errorf("route %s references unknown waypoint ID %d", r.Name, id)
+			}
+			points[j] = wp
+		}
+		g.Routes[i] = Route{Name: r.Name, Points: FromWaypoints(points).Waypoints}
+	}
+	return g, nil
 }
 
 // Write writes the GPX as indented XML.

@@ -200,3 +200,56 @@ func (c *Client) DeleteTrack() error {
 	}
 	return nil
 }
+
+// Routes reads all routes from the device.
+func (c *Client) Routes() ([]Route, error) {
+	info, err := c.Info()
+	if err != nil {
+		return nil, err
+	}
+	routes := make([]Route, 0, info.Routes)
+	for i := range uint32(info.Routes) {
+		msg := binary.LittleEndian.AppendUint32(nil, i)
+		msg = append(msg, 0x00, 0x00, 0x01)
+		data, err := c.request(PidQryRoute, msg, PidData)
+		if err != nil {
+			return nil, fmt.Errorf("reading route %d: %w", i, err)
+		}
+		r, err := decodeRoute(data)
+		if err != nil {
+			return nil, fmt.Errorf("reading route %d: %w", i, err)
+		}
+		routes = append(routes, r)
+	}
+	return routes, nil
+}
+
+// AddRoute uploads a route to the device.
+// All waypoints referenced by the route must exist on the device.
+func (c *Client) AddRoute(r Route) error {
+	msg, err := encodeRoute(r)
+	if err != nil {
+		return err
+	}
+	if _, err := c.request(PidAddARoute, msg, PidData); err != nil {
+		return fmt.Errorf("adding route %s: %w", r.Name, err)
+	}
+	return nil
+}
+
+// DeleteRoute deletes the route with the given ID from the device.
+func (c *Client) DeleteRoute(id uint8) error {
+	msg := binary.LittleEndian.AppendUint16([]byte{0x00, 0x00}, uint16(id))
+	if _, err := c.request(PidDelRoute, msg, PidAck); err != nil {
+		return fmt.Errorf("deleting route %d: %w", id, err)
+	}
+	return nil
+}
+
+// DeleteAllRoutes deletes all routes from the device.
+func (c *Client) DeleteAllRoutes() error {
+	if _, err := c.request(PidDelAllRoute, []byte{0x00, 0xf0, 0x00, 0x00}, PidAck); err != nil {
+		return fmt.Errorf("deleting all routes: %w", err)
+	}
+	return nil
+}
