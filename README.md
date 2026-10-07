@@ -15,8 +15,8 @@ With [Go](https://go.dev/) installed:
 go install github.com/mlange-42/navilink@latest
 ```
 
-Pre-built binaries for Windows, Linux and macOS will be available on the
-[Releases](https://github.com/mlange-42/navilink/releases) page (TODO).
+Pre-built binaries for Windows, Linux and macOS are available on the
+[Releases](https://github.com/mlange-42/navilink/releases) page.
 
 > [!NOTE]
 > On Windows, current Prolific drivers refuse to work with the PL2303HXA
