@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Waypoints to remove after uploading waypoints.gpx, see TESTING.md.
+     Only names matter for removal. ZZT9 does not exist on the device. -->
+<gpx version="1.0" creator="navilink tests" xmlns="http://www.topografix.com/GPX/1/0">
+  <wpt lat="0" lon="0">
+    <name>ZZT1</name>
+  </wpt>
+  <wpt lat="0" lon="0">
+    <name>zz t2 bridge</name>
+  </wpt>
+  <wpt lat="0" lon="0">
+    <name>ZZT9</name>
+  </wpt>
+</gpx>

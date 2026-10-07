@@ -1,4 +1,8 @@
 /navilink.exe
 /navilink
+/out
 
 *.gpx
+
+# test fixtures
+!/testdata/**/*.gpx
