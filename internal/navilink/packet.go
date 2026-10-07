@@ -102,7 +102,7 @@ func (c *Conn) Send(typ byte, data []byte) error {
 		return err
 	}
 	if c.Debug != nil {
-		fmt.Fprintf(c.Debug, "-> %s\n", hexdump(packet))
+		_, _ = fmt.Fprintf(c.Debug, "-> %s\n", hexdump(packet))
 	}
 	_, err = c.rw.Write(packet)
 	return err
@@ -141,7 +141,7 @@ func (c *Conn) Receive() (byte, []byte, error) {
 
 	if c.Debug != nil {
 		packet := append(append(append([]byte{}, startSeq...), lenBytes...), rest...)
-		fmt.Fprintf(c.Debug, "<- %s\n", hexdump(packet))
+		_, _ = fmt.Fprintf(c.Debug, "<- %s\n", hexdump(packet))
 	}
 
 	payload := rest[:length]
@@ -163,7 +163,7 @@ func (c *Conn) readFull(n int, deadline time.Time) ([]byte, error) {
 		}
 		k, err := c.rw.Read(c.buf)
 		c.pending = append(c.pending, c.buf[:k]...)
-		if err != nil && !(errors.Is(err, io.EOF) && k > 0) {
+		if err != nil && (!errors.Is(err, io.EOF) || k == 0) {
 			return nil, err
 		}
 	}

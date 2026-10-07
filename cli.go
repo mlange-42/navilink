@@ -47,8 +47,7 @@ func (g *Globals) open() (*session, error) {
 		return nil, fmt.Errorf("can't open %s: %w%s", device, err, openErrorHint(err))
 	}
 	if err := port.SetReadTimeout(100 * time.Millisecond); err != nil {
-		port.Close()
-		return nil, err
+		return nil, errors.Join(err, port.Close())
 	}
 
 	conn := navilink.NewConn(port)
@@ -57,8 +56,7 @@ func (g *Globals) open() (*session, error) {
 	}
 	client := navilink.NewClient(conn)
 	if err := client.Sync(); err != nil {
-		port.Close()
-		return nil, err
+		return nil, errors.Join(err, port.Close())
 	}
 	return &session{Client: client, port: port, quit: g.Quit}, nil
 }
