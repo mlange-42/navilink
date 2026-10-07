@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Test waypoints for device testing, see TESTING.md.
+     All names start with "ZZ" to avoid clashes with real waypoints. -->
+<gpx version="1.1" creator="navilink tests" xmlns="http://www.topografix.com/GPX/1/1">
+  <!-- Plain waypoint. -->
+  <wpt lat="51.3462" lon="12.3846">
+    <ele>113</ele>
+    <time>2026-10-07T12:00:00Z</time>
+    <name>ZZT1</name>
+    <sym>Flag</sym>
+  </wpt>
+  <!-- Name normalization and truncation, time zone conversion. -->
+  <wpt lat="51.3401" lon="12.3712">
+    <ele>98.5</ele>
+    <time>2026-10-07T14:30:00+02:00</time>
+    <name>zz t2 bridge</name>
+    <sym>Bridge</sym>
+  </wpt>
+  <!-- Geocache: GC prefix stripped, symbol mapped to Flag. No time, no elevation. -->
+  <wpt lat="51.3555" lon="12.4021">
+    <name>GCZZT3</name>
+    <sym>Geocache</sym>
+  </wpt>
+  <!-- Negative coordinates (Santiago de Chile). -->
+  <wpt lat="-33.4489" lon="-70.6693">
+    <ele>520</ele>
+    <time>2026-01-01T00:00:00Z</time>
+    <name>ZZT4 south</name>
+    <sym>Summit</sym>
+  </wpt>
+  <!-- Unknown symbol, end-of-year time. -->
+  <wpt lat="51.3333" lon="12.3333">
+    <ele>0</ele>
+    <time>2026-12-31T23:59:59Z</time>
+    <name>ZZT5</name>
+    <sym>Unknown Thing</sym>
+  </wpt>
+</gpx>

@@ -2,6 +2,7 @@ package gpx
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -144,5 +145,62 @@ func TestWaypointName(t *testing.T) {
 		if got := WaypointName(tt.name, tt.sym); got != tt.want {
 			t.Errorf("WaypointName(%q, %q) = %q, want %q", tt.name, tt.sym, got, tt.want)
 		}
+	}
+}
+
+// TestDeviceTestdata checks the conversions documented in TESTING.md.
+func TestDeviceTestdata(t *testing.T) {
+	read := func(file string) []navilink.Waypoint {
+		f, err := os.Open(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = f.Close() }()
+		g, err := Read(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []navilink.Waypoint
+		for i := range g.Waypoints {
+			wp, err := g.Waypoints[i].ToWaypoint()
+			if err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, wp)
+		}
+		return out
+	}
+
+	points := read("../../testdata/device/waypoints.gpx")
+	want := []struct {
+		name   string
+		symbol string
+		time   string // empty: current time
+	}{
+		{"ZZT1", "Flag", "2026-10-07T12:00:00Z"},
+		{"ZZT2BR", "Bridge", "2026-10-07T12:30:00Z"},
+		{"ZZT3", "Flag", ""},
+		{"ZZT4SO", "Summit", "2026-01-01T00:00:00Z"},
+		{"ZZT5", "Waypoint", "2026-12-31T23:59:59Z"},
+	}
+	if len(points) != len(want) {
+		t.Fatalf("got %d waypoints, want %d", len(points), len(want))
+	}
+	for i, w := range want {
+		p := points[i]
+		if p.Name != w.name || navilink.SymbolName(p.Symbol) != w.symbol {
+			t.Errorf("waypoint %d: got %s/%s, want %s/%s", i, p.Name, navilink.SymbolName(p.Symbol), w.name, w.symbol)
+		}
+		if w.time != "" && formatTime(p.Time) != w.time {
+			t.Errorf("waypoint %s: got time %s, want %s", p.Name, formatTime(p.Time), w.time)
+		}
+	}
+
+	var names []string
+	for _, p := range read("../../testdata/device/waypoints-remove.gpx") {
+		names = append(names, p.Name)
+	}
+	if strings.Join(names, ",") != "ZZT1,ZZT2BR,ZZT9" {
+		t.Errorf("remove names: got %v", names)
 	}
 }
