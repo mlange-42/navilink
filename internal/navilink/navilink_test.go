@@ -234,3 +234,125 @@ func TestSymbols(t *testing.T) {
 		t.Errorf("out of range: got %q", got)
 	}
 }
+
+// sentPackets decodes all packets written to the fake device.
+func sentPackets(t *testing.T, dev *fakeDevice) (types []byte, data [][]byte) {
+	t.Helper()
+	conn := NewConn(bytes.NewBuffer(dev.written.Bytes()))
+	conn.Timeout = 50 * time.Millisecond
+	for {
+		typ, d, err := conn.Receive()
+		if err != nil {
+			return types, data
+		}
+		types = append(types, typ)
+		data = append(data, d)
+	}
+}
+
+func TestEncodeWaypoint(t *testing.T) {
+	msg := encodeWaypoint(Waypoint{
+		ID:       99,
+		Name:     "HOME",
+		Lat:      -33.5,
+		Lon:      151.2345678,
+		Altitude: 30.48,
+		Time:     time.Date(2009, 6, 15, 12, 30, 45, 0, time.UTC),
+		Symbol:   2,
+	})
+	want := []byte{
+		0x00, 0x40, 0x00, 0x00, // record type, ID
+		'H', 'O', 'M', 'E', 0, 0, 0x00, 0x00, // name, reserved
+		0x40, 0x4e, 0x08, 0xec, // lat -335000000
+		0x4e, 0x90, 0x24, 0x5a, // lon 1512345678
+		100, 0, // altitude in feet
+		9, 6, 15, 12, 30, 45, // time
+		2, 0x00, 0x7e, // symbol, reserved
+	}
+	if !bytes.Equal(msg, want) {
+		t.Errorf("got  % x\nwant % x", msg, want)
+	}
+
+	// Round trip through the download format, which has one more trailing byte.
+	got := decodeWaypoint(append(msg, 0))
+	if got.Name != "HOME" || got.Lat != -33.5 || got.Lon != 151.2345678 || got.Symbol != 2 ||
+		!got.Time.Equal(time.Date(2009, 6, 15, 12, 30, 45, 0, time.UTC)) {
+		t.Errorf("round trip: got %+v", got)
+	}
+}
+
+func TestDeleteTrack(t *testing.T) {
+	info := make([]byte, 32)
+	binary.LittleEndian.PutUint32(info[4:], 0x2000)
+	binary.LittleEndian.PutUint16(info[12:], 5000)
+
+	dev := &fakeDevice{}
+	dev.answer(t, PidData, info)
+	dev.answer(t, PidCmdOk, nil)
+	dev.answer(t, PidCmdOk, nil)
+	if err := newTestClient(dev).DeleteTrack(); err != nil {
+		t.Fatal(err)
+	}
+
+	types, data := sentPackets(t, dev)
+	if len(types) != 3 || types[1] != PidEraseTrack || types[2] != PidEraseTrack {
+		t.Fatalf("got packet types % x", types)
+	}
+	if !bytes.Equal(data[1], []byte{0x00, 0x20, 0, 0, 0, 0, 0}) {
+		t.Errorf("first erase: % x", data[1])
+	}
+	if addr := binary.LittleEndian.Uint32(data[2]); addr != 0x2000+4096*32 {
+		t.Errorf("second erase address 0x%x", addr)
+	}
+}
+
+func TestDeleteWaypoint(t *testing.T) {
+	dev := &fakeDevice{}
+	dev.answer(t, PidAck, nil)
+	if err := newTestClient(dev).DeleteWaypoint(0x0102); err != nil {
+		t.Fatal(err)
+	}
+	types, data := sentPackets(t, dev)
+	if types[0] != PidDelWaypoint || !bytes.Equal(data[0], []byte{0, 0, 0x02, 0x01}) {
+		t.Errorf("got type 0x%02x data % x", types[0], data[0])
+	}
+}
+
+func TestDeleteWaypointFails(t *testing.T) {
+	dev := &fakeDevice{}
+	dev.answer(t, PidNak, nil)
+	if err := newTestClient(dev).DeleteWaypoint(1); err == nil {
+		t.Error("expected error on NAK")
+	}
+}
+
+func TestDecodeLogPoint(t *testing.T) {
+	rec := make([]byte, recordSize)
+	le := binary.LittleEndian
+	packed := uint32(26*12+10)<<22 | 7<<17 | 9<<12 | 52<<6 | 58
+	le.PutUint32(rec[4:], packed)
+	le.PutUint32(rec[12:], uint32(513288433))
+	le.PutUint32(rec[16:], uint32(124086787))
+	le.PutUint32(rec[20:], uint32(15636)) // cm
+	le.PutUint16(rec[24:], 500)           // cm/s
+
+	p := decodeLogPoint(rec)
+	want := Trackpoint{
+		Lat:      51.3288433,
+		Lon:      12.4086787,
+		Altitude: 156.36,
+		Time:     time.Date(2026, 10, 7, 9, 52, 58, 0, time.UTC),
+		Speed:    18,
+	}
+	if p != want {
+		t.Errorf("got %+v, want %+v", p, want)
+	}
+}
+
+func TestDecodePackedTimeDecember(t *testing.T) {
+	got := decodePackedTime(uint32(25*12+12)<<22 | 31<<17 | 23<<12 | 59<<6 | 59)
+	want := time.Date(2025, 12, 31, 23, 59, 59, 0, time.UTC)
+	if !got.Equal(want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}

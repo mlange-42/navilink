@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -226,4 +227,236 @@ func (c *LogGetCmd) Run(g *Globals) (err error) {
 		return err
 	}
 	return c.writeGPX(gpx.FromTrackpoints(points))
+}
+
+// input is a flag for commands that read GPX input.
+type input struct {
+	Input string `short:"i" type:"path" placeholder:"FILE" help:"Read GPX from this file instead of stdin."`
+}
+
+// readWaypoints reads the input GPX and converts its waypoints for the device.
+// Invalid waypoints are reported and skipped.
+func (in *input) readWaypoints() ([]navilink.Waypoint, error) {
+	r := io.Reader(os.Stdin)
+	if in.Input != "" && in.Input != "-" {
+		f, err := os.Open(in.Input)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = f.Close() }()
+		r = f
+	}
+	g, err := gpx.Read(r)
+	if err != nil {
+		return nil, err
+	}
+
+	points := make([]navilink.Waypoint, 0, len(g.Waypoints))
+	for i := range g.Waypoints {
+		wp, err := g.Waypoints[i].ToWaypoint()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Skipping waypoint: %v\n", err)
+			continue
+		}
+		points = append(points, wp)
+	}
+	if len(points) == 0 {
+		return nil, errors.New("no waypoints found in GPX input")
+	}
+	return points, nil
+}
+
+// confirmation is a flag for commands that delete data from the device.
+type confirmation struct {
+	Yes bool `short:"y" help:"Do not ask for confirmation."`
+}
+
+// confirm asks the user to confirm a destructive action.
+func (c *confirmation) confirm(msg string) error {
+	if c.Yes {
+		return nil
+	}
+	fmt.Fprintf(os.Stderr, "%s Continue? [y/N] ", msg)
+	answer, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return err
+	}
+	if errors.Is(err, io.EOF) && answer == "" {
+		fmt.Fprintln(os.Stderr)
+		return errors.New("no confirmation received; use --yes to skip it")
+	}
+	switch strings.ToLower(strings.TrimSpace(answer)) {
+	case "y", "yes":
+		return nil
+	}
+	return errors.New("aborted")
+}
+
+// TrackDeleteCmd deletes all track data.
+type TrackDeleteCmd struct {
+	confirmation
+}
+
+func (c *TrackDeleteCmd) Run(g *Globals) (err error) {
+	s, err := g.open()
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, s.Close()) }()
+
+	info, err := s.Info()
+	if err != nil {
+		return err
+	}
+	if info.Trackpoints == 0 {
+		fmt.Fprintln(os.Stderr, "There are no trackpoints on the device.")
+		return nil
+	}
+	if err := c.confirm(fmt.Sprintf("All %d trackpoints will be deleted from the device!", info.Trackpoints)); err != nil {
+		return err
+	}
+	return s.DeleteTrack()
+}
+
+// WaypointsPutCmd uploads waypoints.
+type WaypointsPutCmd struct {
+	input
+	SkipExisting bool `short:"s" help:"Skip waypoints with names that already exist on the device."`
+}
+
+func (c *WaypointsPutCmd) Run(g *Globals) (err error) {
+	points, err := c.readWaypoints()
+	if err != nil {
+		return err
+	}
+
+	s, err := g.open()
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, s.Close()) }()
+
+	existing := map[string]bool{}
+	if c.SkipExisting {
+		onDevice, err := s.Waypoints()
+		if err != nil {
+			return err
+		}
+		for _, wp := range onDevice {
+			existing[wp.Name] = true
+		}
+	}
+
+	uploaded, failed := 0, 0
+	for _, wp := range points {
+		if existing[wp.Name] {
+			fmt.Fprintf(os.Stderr, "Skipped existing waypoint %s\n", wp.Name)
+			continue
+		}
+		if err := s.AddWaypoint(wp); err != nil {
+			fmt.Fprintf(os.Stderr, "Upload failed: %v\n", err)
+			failed++
+			continue
+		}
+		if c.SkipExisting {
+			existing[wp.Name] = true
+		}
+		uploaded++
+	}
+	fmt.Fprintf(os.Stderr, "Uploaded %d waypoints.\n", uploaded)
+	if failed > 0 {
+		return fmt.Errorf("upload of %d waypoints failed", failed)
+	}
+	return nil
+}
+
+// WaypointsRemoveCmd removes the given waypoints.
+type WaypointsRemoveCmd struct {
+	input
+	confirmation
+}
+
+func (c *WaypointsRemoveCmd) Run(g *Globals) (err error) {
+	points, err := c.readWaypoints()
+	if err != nil {
+		return err
+	}
+
+	s, err := g.open()
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, s.Close()) }()
+
+	onDevice, err := s.Waypoints()
+	if err != nil {
+		return err
+	}
+	ids := make(map[string][]uint16, len(onDevice))
+	for _, wp := range onDevice {
+		ids[wp.Name] = append(ids[wp.Name], wp.ID)
+	}
+
+	var toDelete []uint16
+	var names []string
+	for _, wp := range points {
+		found, ok := ids[wp.Name]
+		if !ok {
+			fmt.Fprintf(os.Stderr, "Waypoint %s not found on the device\n", wp.Name)
+			continue
+		}
+		delete(ids, wp.Name) // don't delete twice if the input contains duplicates
+		for _, id := range found {
+			toDelete = append(toDelete, id)
+			names = append(names, wp.Name)
+		}
+	}
+	if len(toDelete) == 0 {
+		return errors.New("none of the waypoints were found on the device")
+	}
+
+	if err := c.confirm(fmt.Sprintf("%d waypoints will be deleted from the device!", len(toDelete))); err != nil {
+		return err
+	}
+
+	deleted, failed := 0, 0
+	for i, id := range toDelete {
+		if err := s.DeleteWaypoint(id); err != nil {
+			fmt.Fprintf(os.Stderr, "Removal of waypoint %s failed, maybe it is in use? %v\n", names[i], err)
+			failed++
+			continue
+		}
+		deleted++
+	}
+	fmt.Fprintf(os.Stderr, "Deleted %d waypoints.\n", deleted)
+	if failed > 0 {
+		return fmt.Errorf("removal of %d waypoints failed", failed)
+	}
+	return nil
+}
+
+// WaypointsDeleteAllCmd deletes all waypoints.
+type WaypointsDeleteAllCmd struct {
+	confirmation
+}
+
+func (c *WaypointsDeleteAllCmd) Run(g *Globals) (err error) {
+	s, err := g.open()
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, s.Close()) }()
+
+	info, err := s.Info()
+	if err != nil {
+		return err
+	}
+	if info.Waypoints == 0 {
+		fmt.Fprintln(os.Stderr, "There are no waypoints on the device.")
+		return nil
+	}
+	if err := c.confirm(fmt.Sprintf("All %d waypoints will be deleted from the device!", info.Waypoints)); err != nil {
+		return err
+	}
+	return s.DeleteAllWaypoints()
 }

@@ -10,6 +10,7 @@ import (
 const (
 	trackChunkSize    = 512 * recordSize // bytes per track/log read request
 	waypointChunkSize = 32               // waypoints per read request
+	eraseBlockPoints  = 4096             // trackpoints per erase request
 )
 
 // Client implements the NaviLink commands on top of a Conn.
@@ -109,7 +110,7 @@ func (c *Client) Trackpoints() ([]Trackpoint, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading trackpoints: %w", err)
 	}
-	return decodeTrackpoints(data), nil
+	return decodeRecords(data, decodeTrackpoint), nil
 }
 
 // LogPoints reads all points from the internal data logger (BGT-31/GT-31 only).
@@ -131,7 +132,7 @@ func (c *Client) LogPoints() ([]Trackpoint, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading log data: %w", err)
 	}
-	return decodeTrackpoints(data), nil
+	return decodeRecords(data, decodeLogPoint), nil
 }
 
 // readMemory reads size bytes starting at addr, in chunks.
@@ -155,4 +156,47 @@ func (c *Client) readMemory(addr, size uint32) ([]byte, error) {
 		}
 	}
 	return out, nil
+}
+
+// AddWaypoint uploads a waypoint to the device.
+func (c *Client) AddWaypoint(wp Waypoint) error {
+	if _, err := c.request(PidAddAWaypoint, encodeWaypoint(wp), PidData); err != nil {
+		return fmt.Errorf("adding waypoint %s: %w", wp.Name, err)
+	}
+	return nil
+}
+
+// DeleteWaypoint deletes the waypoint with the given ID from the device.
+func (c *Client) DeleteWaypoint(id uint16) error {
+	msg := binary.LittleEndian.AppendUint16([]byte{0x00, 0x00}, id)
+	if _, err := c.request(PidDelWaypoint, msg, PidAck); err != nil {
+		return fmt.Errorf("deleting waypoint %d: %w", id, err)
+	}
+	return nil
+}
+
+// DeleteAllWaypoints deletes all waypoints from the device.
+func (c *Client) DeleteAllWaypoints() error {
+	if _, err := c.request(PidDelAllWaypoint, []byte{0x00, 0xf0, 0x00, 0x00}, PidAck); err != nil {
+		return fmt.Errorf("deleting all waypoints: %w", err)
+	}
+	return nil
+}
+
+// DeleteTrack deletes all trackpoints from the device.
+// Trackpoints are erased in blocks of eraseBlockPoints points.
+func (c *Client) DeleteTrack() error {
+	info, err := c.Info()
+	if err != nil {
+		return err
+	}
+	for start := 0; start == 0 || start < int(info.Trackpoints); start += eraseBlockPoints {
+		addr := info.TrackBuffer + uint32(start)*recordSize
+		msg := binary.LittleEndian.AppendUint32(nil, addr)
+		msg = append(msg, 0x00, 0x00, 0x00)
+		if _, err := c.request(PidEraseTrack, msg, PidCmdOk); err != nil {
+			return fmt.Errorf("deleting trackpoints: %w", err)
+		}
+	}
+	return nil
 }

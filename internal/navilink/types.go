@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"time"
 )
 
@@ -61,10 +62,24 @@ func decodeTrackpoint(rec []byte) Trackpoint {
 	}
 }
 
-func decodeTrackpoints(data []byte) []Trackpoint {
+// decodeLogPoint decodes a record of the internal data logger
+// (Locosys SBP format, as used by the BGT-31/GT-31).
+func decodeLogPoint(rec []byte) Trackpoint {
+	le := binary.LittleEndian
+	return Trackpoint{
+		Lat:      float64(int32(le.Uint32(rec[12:]))) / coordScale,
+		Lon:      float64(int32(le.Uint32(rec[16:]))) / coordScale,
+		Altitude: float64(int32(le.Uint32(rec[20:]))) / 100, // cm
+		Time:     decodePackedTime(le.Uint32(rec[4:])),
+		Speed:    float64(le.Uint16(rec[24:])) * 0.036, // cm/s
+	}
+}
+
+// decodeRecords decodes all complete 32-byte records in data.
+func decodeRecords(data []byte, decode func([]byte) Trackpoint) []Trackpoint {
 	points := make([]Trackpoint, 0, len(data)/recordSize)
 	for i := 0; i+recordSize <= len(data); i += recordSize {
-		points = append(points, decodeTrackpoint(data[i:i+recordSize]))
+		points = append(points, decode(data[i:i+recordSize]))
 	}
 	return points
 }
@@ -99,9 +114,49 @@ func decodeTime(b []byte) time.Time {
 		int(b[3]), int(b[4]), int(b[5]), 0, time.UTC)
 }
 
+// decodePackedTime decodes a date and time packed into 32 bits:
+// year*12+month (bits 22-31, years since 2000), day (17-21), hour (12-16),
+// minute (6-11) and second (0-5). Times are UTC.
+func decodePackedTime(v uint32) time.Time {
+	ym := int(v >> 22)
+	return time.Date(2000+ym/12, time.Month(ym%12), int(v>>17&0x1f),
+		int(v>>12&0x1f), int(v>>6&0x3f), int(v&0x3f), 0, time.UTC)
+}
+
 func cString(b []byte) string {
 	if i := bytes.IndexByte(b, 0); i >= 0 {
 		b = b[:i]
 	}
 	return string(b)
+}
+
+// encodeWaypoint encodes a waypoint for upload with PidAddAWaypoint.
+// The device assigns the ID, so the ID of the waypoint is ignored.
+func encodeWaypoint(wp Waypoint) []byte {
+	le := binary.LittleEndian
+	msg := []byte{0x00, 0x40, 0x00, 0x00}
+
+	name := make([]byte, 6)
+	copy(name, wp.Name)
+	msg = append(msg, name...)
+	msg = append(msg, 0x00, 0x00)
+
+	msg = le.AppendUint32(msg, uint32(int32(math.Round(wp.Lat*coordScale))))
+	msg = le.AppendUint32(msg, uint32(int32(math.Round(wp.Lon*coordScale))))
+	alt := math.Round(wp.Altitude / feetToMeters)
+	msg = le.AppendUint16(msg, uint16(max(0, min(alt, math.MaxUint16))))
+	msg = append(msg, encodeTime(wp.Time)...)
+	msg = append(msg, wp.Symbol, 0x00, 0x7e)
+	return msg
+}
+
+// encodeTime encodes a time as 6 bytes (see decodeTime).
+// Times outside the years 2000-2255 are encoded as 2000-01-01T00:00:00.
+func encodeTime(t time.Time) []byte {
+	t = t.UTC()
+	if t.Year() < 2000 || t.Year() > 2255 {
+		return []byte{0, 1, 1, 0, 0, 0}
+	}
+	return []byte{byte(t.Year() - 2000), byte(t.Month()), byte(t.Day()),
+		byte(t.Hour()), byte(t.Minute()), byte(t.Second())}
 }
