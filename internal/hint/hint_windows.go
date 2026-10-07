@@ -1,4 +1,5 @@
-package main
+// Package hint provides how-tos for known errors.
+package hint
 
 import (
 	"errors"
@@ -21,8 +22,8 @@ To fix this, install the older Prolific driver 3.3.2.102:
      Let me pick from a list, and select version 3.3.2.102.
   4. Reconnect the GPS and check the port with "navilink ports".`
 
-// openErrorHint returns a how-to for known errors when opening a serial port.
-func openErrorHint(err error) string {
+// OpenError returns a how-to for known errors when opening a serial port.
+func OpenError(err error) string {
 	if errors.Is(err, windows.ERROR_DEV_NOT_EXIST) {
 		return pl2303Hint
 	}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mlange-42/navilink/internal/gpx"
+	"github.com/mlange-42/navilink/internal/hint"
 	"github.com/mlange-42/navilink/internal/navilink"
 	"go.bug.st/serial"
 )
@@ -44,7 +45,7 @@ func (g *Globals) open() (*session, error) {
 		StopBits: serial.OneStopBit,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("can't open %s: %w%s", device, err, openErrorHint(err))
+		return nil, fmt.Errorf("can't open %s: %w%s", device, err, hint.OpenError(err))
 	}
 	if err := port.SetReadTimeout(100 * time.Millisecond); err != nil {
 		return nil, errors.Join(err, port.Close())
