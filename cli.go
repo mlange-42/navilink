@@ -436,7 +436,11 @@ func (c *WaypointsRemoveCmd) Run(g *Globals) (err error) {
 	deleted, failed := 0, 0
 	for i, id := range toDelete {
 		if err := s.DeleteWaypoint(id); err != nil {
-			fmt.Fprintf(os.Stderr, "Removal of waypoint %s failed, maybe it is in use? %v\n", names[i], err)
+			if errors.Is(err, navilink.ErrRefused) {
+				fmt.Fprintf(os.Stderr, "Waypoint %s not deleted: refused by the device, it is probably used by a route\n", names[i])
+			} else {
+				fmt.Fprintf(os.Stderr, "Removal of waypoint %s failed: %v\n", names[i], err)
+			}
 			failed++
 			continue
 		}

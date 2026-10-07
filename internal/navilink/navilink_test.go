@@ -3,6 +3,7 @@ package navilink
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"io"
 	"testing"
 	"time"
@@ -321,8 +322,8 @@ func TestDeleteWaypoint(t *testing.T) {
 func TestDeleteWaypointFails(t *testing.T) {
 	dev := &fakeDevice{}
 	dev.answer(t, PidNak, nil)
-	if err := newTestClient(dev).DeleteWaypoint(1); err == nil {
-		t.Error("expected error on NAK")
+	if err := newTestClient(dev).DeleteWaypoint(1); !errors.Is(err, ErrRefused) {
+		t.Errorf("expected ErrRefused on NAK, got %v", err)
 	}
 }
 

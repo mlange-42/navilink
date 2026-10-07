@@ -13,6 +13,10 @@ const (
 	eraseBlockPoints  = 4096             // trackpoints per erase request
 )
 
+// ErrRefused is returned when the device answers a request with
+// PidNak or PidCmdFail.
+var ErrRefused = errors.New("refused by the device")
+
 // Client implements the NaviLink commands on top of a Conn.
 type Client struct {
 	conn *Conn
@@ -33,6 +37,9 @@ func (c *Client) request(typ byte, data []byte, want byte) ([]byte, error) {
 		return nil, err
 	}
 	if rTyp != want {
+		if rTyp == PidNak || rTyp == PidCmdFail {
+			return nil, ErrRefused
+		}
 		return nil, fmt.Errorf("unexpected response type 0x%02x to request 0x%02x (want 0x%02x)", rTyp, typ, want)
 	}
 	return rData, nil

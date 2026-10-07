@@ -162,8 +162,9 @@ Waypoints used by routes can't be deleted:
 go run . waypoints remove -y -i testdata/device/routes-waypoints.gpx
 ```
 
-**Expected:** removal fails for all 5 waypoints (`maybe it is in use?`), and
-the command exits with an error.
+**Expected:** the device refuses all 5 waypoints
+(`Waypoint … not deleted: refused by the device, it is probably used by a route`),
+and the command exits with an error.
 
 Remove the test routes, then their waypoints:
 
